@@ -1,0 +1,56 @@
+.{
+    .id = "dev.native_sdk.work_log",
+    .name = "work-log",
+    .display_name = "Work Log",
+    .description = "A clipboard-based work logger with monthly calendar view.",
+    .version = "0.2.0",
+    .icons = .{"assets/icon.svg"},
+    .platforms = .{ "windows", "macos", "linux" },
+    .permissions = .{ "window", "command", "clipboard" },
+    .capabilities = .{
+        "webview",
+        "js_bridge",
+        "native_views",
+        "shortcuts",
+        "tray",
+        "clipboard",
+        "dialog",
+    },
+    .commands = .{
+        .{ .id = "app.store", .title = "Store Clipboard" },
+    },
+    .shortcuts = .{
+        .{ .id = "app.store", .key = "l", .modifiers = .{ "primary", "alt" } },
+    },
+    .menus = .{
+        .{
+            .title = "Actions",
+            .items = .{
+                .{ .label = "Store Selected Text", .command = "app.store", .key = "l", .modifiers = .{ "primary", "alt" } },
+            },
+        },
+    },
+    .shell = .{
+        .windows = .{
+            .{
+                .label = "main",
+                .title = "Work Log",
+                .width = 1000,
+                .height = 700,
+                .restore_state = false,
+                .restore_policy = "center_on_primary",
+                .views = .{
+                    .{ .label = "main", .kind = "webview", .url = "zero://inline", .fill = true },
+                },
+            },
+        },
+    },
+    .security = .{
+        .navigation = .{
+            .allowed_origins = .{ "zero://app", "zero://inline" },
+            .external_links = .{ .action = "deny" },
+        },
+    },
+    .web_engine = "system",
+    .cef = .{ .dir = "third_party/cef/macos", .auto_install = false },
+}

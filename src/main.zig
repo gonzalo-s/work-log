@@ -758,12 +758,14 @@ fn checkGlobalHotkey() bool {
     if (builtin.os.tag != .windows) return false;
     const ctrl = w32.GetAsyncKeyState(0x11) < 0;
     const alt = w32.GetAsyncKeyState(0x12) < 0;
-    const l_key = w32.GetAsyncKeyState(0x4C) < 0;
+    const shift = w32.GetAsyncKeyState(0x10) < 0;
+    const win = w32.GetAsyncKeyState(0x5B) < 0 or w32.GetAsyncKeyState(0x5C) < 0;
+    const key_down = w32.GetAsyncKeyState(@intCast(hotkey_key)) < 0;
 
-    const pressed = ctrl and alt and l_key;
+    const pressed = hotkeyMatches(hotkey_mods, ctrl, alt, shift, win, key_down);
     if (pressed and !hotkey_was_down) {
         hotkey_was_down = true;
-        debugLog("HOTKEY DETECTED: Ctrl+Alt+L pressed!");
+        debugLog("HOTKEY DETECTED: configured combo pressed!");
         return true;
     }
     if (!pressed) hotkey_was_down = false;
@@ -772,9 +774,18 @@ fn checkGlobalHotkey() bool {
 
 fn simulateCtrlC() void {
     if (builtin.os.tag != .windows) return;
-    debugLog("simulateCtrlC: releasing Alt+L, then sending Ctrl+C");
-    w32.keybd_event(0x12, 0, w32.KEYEVENTF_KEYUP, 0); // release Alt
-    w32.keybd_event(0x4C, 0, w32.KEYEVENTF_KEYUP, 0); // release L
+    debugLog("simulateCtrlC: releasing configured combo, then sending Ctrl+C");
+    // Release every modifier/key that's part of the configured combo so it
+    // doesn't interfere with the synthetic Ctrl+C below. Ctrl itself is left
+    // alone here regardless of whether it's part of the combo - the
+    // subsequent Ctrl+C block presses and releases it either way.
+    if (hotkey_mods & hotkey_mod_win != 0) {
+        w32.keybd_event(0x5B, 0, w32.KEYEVENTF_KEYUP, 0);
+        w32.keybd_event(0x5C, 0, w32.KEYEVENTF_KEYUP, 0);
+    }
+    if (hotkey_mods & hotkey_mod_shift != 0) w32.keybd_event(0x10, 0, w32.KEYEVENTF_KEYUP, 0);
+    if (hotkey_mods & hotkey_mod_alt != 0) w32.keybd_event(0x12, 0, w32.KEYEVENTF_KEYUP, 0);
+    w32.keybd_event(hotkey_key, 0, w32.KEYEVENTF_KEYUP, 0);
     w32.Sleep(30);
     w32.keybd_event(0x11, 0, 0, 0); // Ctrl down
     w32.keybd_event(0x43, 0, 0, 0); // C down

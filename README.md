@@ -2,8 +2,8 @@
 
 A Windows desktop tool for logging what you work on without breaking your
 flow. Select any text (like a Jira ticket URL) in any application, press
-**Ctrl+Alt+L**, and it's saved under today's date — no need to switch to
-this app first.
+your global shortcut (**Ctrl+Alt+L** by default, changeable in Settings),
+and it's saved under today's date — no need to switch to this app first.
 
 Built on the [Native SDK](https://native-sdk.dev) using its WebView-shell
 architecture: the UI is generated HTML/CSS/JS served from an embedded
@@ -11,14 +11,16 @@ WebView, with all app logic in Zig (`src/main.zig`).
 
 ## Features
 
-- **Global hotkey capture** — Ctrl+Alt+L stores the current text selection
-  under today's date from anywhere on the desktop.
+- **Global hotkey capture** — a configurable shortcut (Ctrl+Alt+L by
+  default) stores the current text selection under today's date from
+  anywhere on the desktop.
 - **Month / Week / Day views** — browse logged entries with real calendar
   navigation; delete entries inline.
 - **Analytics** — time spent per ticket, inferred from gaps between
   consecutive entries, with configurable working hours and a fill-gaps
   option for the last entry of the day.
-- **Settings** — working hours, light/dark/auto theme, fill-gaps behavior.
+- **Settings** — working hours, light/dark/auto theme, global shortcut,
+  fill-gaps behavior.
 - **CSV export** — back up all entries via the native Save dialog.
 - **System tray** — runs from the tray with an icon that adapts to
   Windows light/dark taskbar theme.

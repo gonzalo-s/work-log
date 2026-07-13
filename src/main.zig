@@ -93,7 +93,7 @@ const app_bridge_policies = [_]native_sdk.BridgeCommandPolicy{
     .{ .name = "app.toggle-weekends", .permissions = &.{}, .origins = &bridge_origins },
 };
 const tray_items = [_]native_sdk.TrayMenuItem{
-    .{ .id = 1, .label = "Store Clipboard (Ctrl+Alt+L)", .command = "app.store" },
+    .{ .id = 1, .label = "Store Clipboard (default Ctrl+Alt+L)", .command = "app.store" },
     .{ .id = 2, .label = "Show Window" },
 };
 const tray_icon_for_light_taskbar = "assets/icon.ico";
@@ -320,7 +320,7 @@ const WorkLogApp = struct {
         debugLog("start: app started, creating tray and timer");
         try runtime.createTray(.{
             .icon_path = trayIconPathFor(runtime.appearance.color_scheme),
-            .tooltip = "Work Log - Ctrl+Alt+L to store",
+            .tooltip = "Work Log - your shortcut (default Ctrl+Alt+L) to store",
             .items = &tray_items,
         });
         try runtime.startTimer(hotkey_timer_id, hotkey_interval_ns, true);
@@ -368,7 +368,7 @@ const WorkLogApp = struct {
             .appearance_changed => |appearance| {
                 runtime.createTray(.{
                     .icon_path = trayIconPathFor(appearance.color_scheme),
-                    .tooltip = "Work Log - Ctrl+Alt+L to store",
+                    .tooltip = "Work Log - your shortcut (default Ctrl+Alt+L) to store",
                     .items = &tray_items,
                 }) catch {};
             },
@@ -1360,7 +1360,7 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
 
     pos = appendStr(buf, pos,
         \\<h1>Work Log</h1>
-        \\<p class="sub">Select text + <b>Ctrl+Alt+L</b> anywhere to store. Hover entries to see full text.</p>
+        \\<p class="sub">Select text + your shortcut (default <b>Ctrl+Alt+L</b>) anywhere to store. Hover entries to see full text.</p>
     );
 
     pos = appendStr(buf, pos, "<div class=\"navbar\">");
@@ -1424,10 +1424,10 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\<p class="sub" style="margin-bottom:10px">Work Log is a lightweight tool for keeping track of the tickets (or any text) you work on throughout the day, without breaking your flow to switch windows.</p>
         \\<p class="sub" style="margin-bottom:6px"><b>How it works:</b></p>
         \\<ul style="margin:0 0 10px 18px;font-size:13px;color:#6b7280;line-height:1.6">
-        \\<li>Select any text (like a Jira ticket URL) in any application and press <b>Ctrl+Alt+L</b> to save it under today's date - no need to switch to this app first.</li>
+        \\<li>Select any text (like a Jira ticket URL) in any application and press your configured shortcut (default <b>Ctrl+Alt+L</b>) to save it under today's date - no need to switch to this app first.</li>
         \\<li>Browse what you logged in the <b>Month</b>, <b>Week</b>, or <b>Day</b> view. Hover an entry to see its full text, and use the &times; to delete one.</li>
         \\<li><b>Analytics</b> shows how much time you spent on each ticket, based on the gap between when each one was logged.</li>
-        \\<li>Use the gear icon to set your work hours, theme, fill-gaps behavior, and to export a CSV backup.</li>
+        \\<li>Use the gear icon to set your work hours, theme, global shortcut, fill-gaps behavior, and to export a CSV backup.</li>
         \\</ul>
         \\<p class="sub" style="margin-bottom:0">Version 0.2.0</p>
         \\<div class="modal-actions">
@@ -2202,7 +2202,7 @@ pub fn main(init: std.process.Init) !void {
     initLogPath();
     debugLog("=== Work Log starting ===");
     resetViewToToday();
-    setStatus("Ready. Select text + Ctrl+Alt+L to store.");
+    setStatus("Ready. Select text + your shortcut (default Ctrl+Alt+L) to store.");
     var app_state = WorkLogApp{};
     app_state.initDataPath();
     debugLogWithText("data path: ", app_state.dataPath());

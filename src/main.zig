@@ -22,6 +22,7 @@ var work_start_hour: u8 = 9;
 var work_end_hour: u8 = 17;
 var app_theme: Theme = .auto;
 var fill_gaps: bool = false;
+var show_weekends: bool = false;
 
 const Entry = struct {
     date: [10]u8,
@@ -59,6 +60,7 @@ const app_bridge_policies = [_]native_sdk.BridgeCommandPolicy{
     .{ .name = "app.get-settings", .permissions = &.{}, .origins = &bridge_origins },
     .{ .name = "app.save-settings", .permissions = &.{}, .origins = &bridge_origins },
     .{ .name = "app.export-data", .permissions = &.{}, .origins = &bridge_origins },
+    .{ .name = "app.toggle-weekends", .permissions = &.{}, .origins = &bridge_origins },
 };
 const tray_items = [_]native_sdk.TrayMenuItem{
     .{ .id = 1, .label = "Store Clipboard (Ctrl+Alt+L)", .command = "app.store" },
@@ -96,7 +98,7 @@ const WorkLogApp = struct {
     html_len: usize = 0,
     pending_clipboard_read: bool = false,
     started: bool = false,
-    handlers: [11]native_sdk.bridge.Handler = undefined,
+    handlers: [12]native_sdk.bridge.Handler = undefined,
 
     fn app(self: *@This()) native_sdk.App {
         return .{
@@ -123,6 +125,7 @@ const WorkLogApp = struct {
             .{ .name = "app.get-settings", .context = self, .invoke_fn = getSettingsHandler },
             .{ .name = "app.save-settings", .context = self, .invoke_fn = saveSettingsHandler },
             .{ .name = "app.export-data", .context = self, .invoke_fn = exportDataHandler },
+            .{ .name = "app.toggle-weekends", .context = self, .invoke_fn = toggleWeekendsHandler },
         };
         return .{
             .policy = .{ .enabled = true, .commands = &app_bridge_policies },
@@ -244,6 +247,14 @@ const WorkLogApp = struct {
         return self.renderCurrentViewJson(output);
     }
 
+    fn toggleWeekendsHandler(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
+        _ = invocation;
+        const self: *@This() = @ptrCast(@alignCast(context));
+        show_weekends = !show_weekends;
+        self.saveSettings();
+        return self.renderCurrentViewJson(output);
+    }
+
     fn exportDataHandler(context: *anyopaque, invocation: native_sdk.bridge.Invocation, output: []u8) anyerror![]const u8 {
         const self: *@This() = @ptrCast(@alignCast(context));
         const payload = invocation.request.payload;
@@ -293,6 +304,7 @@ const WorkLogApp = struct {
             .timer => |timer| {
                 if (timer.id == hotkey_timer_id) {
                     if (checkGlobalHotkey()) {
+                        showToast(runtime, "Checking entry...", "");
                         simulateCtrlC();
                         self.pending_clipboard_read = true;
                         runtime.startTimer(clipboard_read_timer_id, clipboard_read_delay_ns, false) catch {};
@@ -332,11 +344,13 @@ const WorkLogApp = struct {
         const clip_text = readSystemClipboard(&clip_buf) orelse {
             debugLog("handleStore: clipboard returned null (no text)");
             setStatus("No text in clipboard.");
+            showToast(runtime, "No text found", "Select some text before pressing the hotkey.");
             return;
         };
         if (clip_text.len == 0) {
             debugLog("handleStore: clipboard is empty");
             setStatus("Clipboard is empty.");
+            showToast(runtime, "No text found", "Select some text before pressing the hotkey.");
             return;
         }
         debugLogWithText("handleStore: got clipboard text: ", clip_text);
@@ -346,11 +360,13 @@ const WorkLogApp = struct {
         if (self.isDuplicate(&today, clip_text)) {
             debugLog("handleStore: duplicate, skipping");
             setStatus("Already stored today.");
+            showToast(runtime, "Duplicate entry", "Already stored today.");
             return;
         }
 
         if (self.entry_count >= max_entries) {
             setStatus("Storage full.");
+            showToast(runtime, "Storage full", "Export or clear old entries.");
             return;
         }
 
@@ -371,6 +387,7 @@ const WorkLogApp = struct {
         const display_len = @min(copy_len, 60);
         const status = std.fmt.bufPrint(&store_status_buf, "Stored: {s}", .{clip_text[0..display_len]}) catch "Stored entry.";
         setStatus(status);
+        showToast(runtime, "Entry saved", clip_text[0..display_len]);
     }
 
     fn handleCopyDay(self: *@This(), runtime: *native_sdk.Runtime, window_id: platform.WindowId, target_date: []const u8) void {
@@ -558,6 +575,8 @@ const WorkLogApp = struct {
                 }
             } else if (std.mem.eql(u8, key, "fill_gaps")) {
                 fill_gaps = std.mem.eql(u8, value, "1");
+            } else if (std.mem.eql(u8, key, "show_weekends")) {
+                show_weekends = std.mem.eql(u8, value, "1");
             }
         }
     }
@@ -581,11 +600,12 @@ const WorkLogApp = struct {
             .dark => "dark",
         };
         var write_buf: [256]u8 = undefined;
-        const content = std.fmt.bufPrint(&write_buf, "work_start_hour={d}\nwork_end_hour={d}\ntheme={s}\nfill_gaps={d}\n", .{
+        const content = std.fmt.bufPrint(&write_buf, "work_start_hour={d}\nwork_end_hour={d}\ntheme={s}\nfill_gaps={d}\nshow_weekends={d}\n", .{
             work_start_hour,
             work_end_hour,
             theme_str,
             @as(u8, if (fill_gaps) 1 else 0),
+            @as(u8, if (show_weekends) 1 else 0),
         }) catch return;
         var written: u32 = 0;
         _ = w32.WriteFile(handle, content.ptr, @intCast(content.len), &written, null);
@@ -743,6 +763,12 @@ fn setStatus(text: []const u8) void {
 
 fn currentStatus() []const u8 {
     return status_buf[0..status_len];
+}
+
+fn showToast(runtime: *native_sdk.Runtime, title: []const u8, body: []const u8) void {
+    runtime.showNotification(.{ .title = title, .body = body }) catch |err| {
+        debugLogWithText("showToast: failed: ", @errorName(err));
+    };
 }
 
 pub fn todayDateStr() [10]u8 {
@@ -1190,7 +1216,9 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\#cal-root{flex:1;display:flex;flex-direction:column;min-height:0}
         \\.mtitle{font-size:20px;font-weight:600;margin-bottom:10px;text-align:center;flex:0 0 auto}
         \\.wrow{display:grid;grid-template-columns:repeat(7,minmax(150px,300px));gap:8px;margin-bottom:8px;justify-content:center;flex:1;min-height:0}
+        \\.wrow.wk5{grid-template-columns:repeat(5,minmax(150px,300px))}
         \\.whdr{display:grid;grid-template-columns:repeat(7,minmax(150px,300px));gap:8px;margin-bottom:4px;justify-content:center;flex:0 0 auto}
+        \\.whdr.wk5{grid-template-columns:repeat(5,minmax(150px,300px))}
         \\.whdr span{font-size:13px;font-weight:600;color:#6b7280;text-align:center;padding:2px}
         \\.whdr span:nth-child(6),.whdr span:nth-child(7){opacity:0.55}
         \\.dc{background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:10px;min-height:84px;width:auto;display:flex;flex-direction:column}
@@ -1289,6 +1317,12 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
     pos = appendStr(buf, pos, "<button id=\"vb-analytics\" onclick=\"setView('analytics')\" class=\"");
     if (view_mode == .analytics) pos = appendStr(buf, pos, "active");
     pos = appendStr(buf, pos, "\">Analytics</button>");
+    pos = appendStr(buf, pos, "<span class=\"navsep\"></span>");
+    pos = appendStr(buf, pos, "<button id=\"vb-weekends\" onclick=\"toggleWeekends()\" class=\"");
+    if (show_weekends) pos = appendStr(buf, pos, "active");
+    pos = appendStr(buf, pos, "\">");
+    pos = appendStr(buf, pos, if (show_weekends) "Hide Weekends" else "Show Weekends");
+    pos = appendStr(buf, pos, "</button>");
     pos = appendStr(buf, pos, "<span class=\"nav-right\">");
     pos = appendStr(buf, pos, "<button onclick=\"openAbout()\" title=\"About\">&#8505;</button>");
     pos = appendStr(buf, pos, "<button onclick=\"openSettings()\" title=\"Settings\">&#9881;</button>");
@@ -1369,6 +1403,9 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         .dark => "dark",
     });
     pos = appendStr(buf, pos, "\";\napplyTheme(currentThemeSetting);\n");
+    pos = appendStr(buf, pos, "let weekendsShown = ");
+    pos = appendStr(buf, pos, if (show_weekends) "true" else "false");
+    pos = appendStr(buf, pos, ";\n");
 
     pos = appendStr(buf, pos,
         \\function applyResult(r){
@@ -1402,6 +1439,15 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\      applyResult(r);
         \\    }
         \\  }catch(e){console.error(e)}
+        \\}
+        \\async function toggleWeekends(){
+        \\  await callNav("app.toggle-weekends");
+        \\  weekendsShown = !weekendsShown;
+        \\  const el = document.getElementById("vb-weekends");
+        \\  if(el){
+        \\    el.classList.toggle("active", weekendsShown);
+        \\    el.textContent = weekendsShown ? "Hide Weekends" : "Show Weekends";
+        \\  }
         \\}
         \\async function navPrev(){ await callNav("app.nav-prev"); }
         \\async function navNext(){ await callNav("app.nav-next"); }
@@ -1570,16 +1616,21 @@ fn writeMonthBody(buf: []u8, pos_start: usize, entries: []const Entry) usize {
     pos = appendNum(buf, pos, view_year);
     pos = appendStr(buf, pos, "</div>");
 
-    pos = appendStr(buf, pos, "<div class=\"whdr\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>");
+    const cols: u16 = if (show_weekends) 7 else 5;
+    pos = appendStr(buf, pos, if (show_weekends)
+        "<div class=\"whdr\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>"
+    else
+        "<div class=\"whdr wk5\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span></div>");
 
     const first_dow = dayOfWeek(view_year, view_month, 1);
+    const wrow_class = if (show_weekends) "<div class=\"wrow\">" else "<div class=\"wrow wk5\">";
 
     var day_num: u16 = 1;
     var in_row: bool = false;
     var col: u16 = 0;
 
-    if (first_dow > 0) {
-        pos = appendStr(buf, pos, "<div class=\"wrow\">");
+    if (first_dow > 0 and (show_weekends or first_dow < 5)) {
+        pos = appendStr(buf, pos, wrow_class);
         in_row = true;
         var blank: u16 = 0;
         while (blank < first_dow) : (blank += 1) {
@@ -1591,8 +1642,13 @@ fn writeMonthBody(buf: []u8, pos_start: usize, entries: []const Entry) usize {
     while (day_num <= dim) {
         const dow = dayOfWeek(view_year, view_month, day_num);
 
+        if (!show_weekends and dow >= 5) {
+            day_num += 1;
+            continue;
+        }
+
         if (!in_row) {
-            pos = appendStr(buf, pos, "<div class=\"wrow\">");
+            pos = appendStr(buf, pos, wrow_class);
             in_row = true;
             col = 0;
             var fill: u16 = 0;
@@ -1607,7 +1663,7 @@ fn writeMonthBody(buf: []u8, pos_start: usize, entries: []const Entry) usize {
         col += 1;
         day_num += 1;
 
-        if (col >= 7) {
+        if (col >= cols) {
             pos = appendStr(buf, pos, "</div>");
             in_row = false;
             col = 0;
@@ -1615,7 +1671,7 @@ fn writeMonthBody(buf: []u8, pos_start: usize, entries: []const Entry) usize {
     }
 
     if (in_row and col > 0) {
-        while (col < 7) : (col += 1) {
+        while (col < cols) : (col += 1) {
             pos = appendStr(buf, pos, "<div class=\"dc empty\"></div>");
         }
         pos = appendStr(buf, pos, "</div>");
@@ -1630,27 +1686,31 @@ fn writeWeekBody(buf: []u8, pos_start: usize, entries: []const Entry) usize {
 
     const dow = dayOfWeek(view_year, view_month, view_day);
     const monday = addDays(view_year, view_month, view_day, -@as(i64, dow));
-    const sunday = addDays(monday.year, monday.month, monday.day, 6);
+    const week_days: u16 = if (show_weekends) 7 else 5;
+    const end_day = addDays(monday.year, monday.month, monday.day, week_days - 1);
 
     pos = appendStr(buf, pos, "<div class=\"mtitle\">");
     pos = appendStr(buf, pos, month_names[monday.month - 1]);
     pos = appendStr(buf, pos, " ");
     pos = appendNum(buf, pos, monday.day);
     pos = appendStr(buf, pos, " - ");
-    if (sunday.month != monday.month) {
-        pos = appendStr(buf, pos, month_names[sunday.month - 1]);
+    if (end_day.month != monday.month) {
+        pos = appendStr(buf, pos, month_names[end_day.month - 1]);
         pos = appendStr(buf, pos, " ");
     }
-    pos = appendNum(buf, pos, sunday.day);
+    pos = appendNum(buf, pos, end_day.day);
     pos = appendStr(buf, pos, ", ");
-    pos = appendNum(buf, pos, sunday.year);
+    pos = appendNum(buf, pos, end_day.year);
     pos = appendStr(buf, pos, "</div>");
 
-    pos = appendStr(buf, pos, "<div class=\"whdr\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>");
-    pos = appendStr(buf, pos, "<div class=\"wrow\">");
+    pos = appendStr(buf, pos, if (show_weekends)
+        "<div class=\"whdr\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>"
+    else
+        "<div class=\"whdr wk5\"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span></div>");
+    pos = appendStr(buf, pos, if (show_weekends) "<div class=\"wrow\">" else "<div class=\"wrow wk5\">");
 
     var i: u16 = 0;
-    while (i < 7) : (i += 1) {
+    while (i < week_days) : (i += 1) {
         const c = addDays(monday.year, monday.month, monday.day, i);
         pos = writeDayCell(buf, pos, entries, c.year, c.month, c.day, i, &today);
     }

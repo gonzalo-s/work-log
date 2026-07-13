@@ -1486,6 +1486,10 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\  return parts.join("+");
         \\}
         \\function resetHotkey(){
+        \\  if(hotkeyRecordingHandler){
+        \\    document.removeEventListener("keydown",hotkeyRecordingHandler,true);
+        \\    hotkeyRecordingHandler=null;
+        \\  }
         \\  pendingHotkeyMods=HOTKEY_MOD_CTRL|HOTKEY_MOD_ALT;
         \\  pendingHotkeyKey=76;
         \\  document.getElementById("set-hotkey-display").textContent=hotkeyLabel(pendingHotkeyMods,pendingHotkeyKey);
@@ -1494,6 +1498,10 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\  hint.classList.remove("error");
         \\}
         \\function recordHotkey(){
+        \\  if(hotkeyRecordingHandler){
+        \\    document.removeEventListener("keydown",hotkeyRecordingHandler,true);
+        \\    hotkeyRecordingHandler=null;
+        \\  }
         \\  const disp=document.getElementById("set-hotkey-display");
         \\  const hint=document.getElementById("hotkey-hint");
         \\  disp.textContent="Press keys...";

@@ -1325,6 +1325,11 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
         \\.modal-actions button{font-size:13px;padding:6px 14px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;color:#374151}
         \\.modal-actions button.primary{background:#3b82f6;color:#fff;border-color:#3b82f6}
+        \\.hotkey-field{display:flex;align-items:center;gap:6px}
+        \\.hotkey-field span{font-family:monospace;font-size:13px;padding:2px 8px;background:#f3f4f6;border-radius:4px;min-width:90px;text-align:center;display:inline-block}
+        \\.hotkey-field button{font-size:12px;padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:#fff;color:#374151}
+        \\.hotkey-hint{font-size:12px;color:#6b7280;margin:-4px 0 12px 0}
+        \\.hotkey-hint.error{color:#dc2626}
         \\:root[data-theme="dark"] body{background:#0f1117;color:#e5e7eb}
         \\:root[data-theme="dark"] #app-status{background:#1a1d27;border-top-color:#2d3140;color:#e5e7eb}
         \\:root[data-theme="dark"] .navbar button{background:#1a1d27;color:#e5e7eb;border-color:#2d3140}
@@ -1347,6 +1352,8 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\:root[data-theme="dark"] .adur{color:#9ca3af}
         \\:root[data-theme="dark"] .modal-panel{background:#1a1d27;color:#e5e7eb}
         \\:root[data-theme="dark"] .modal-panel input,:root[data-theme="dark"] .modal-panel select{background:#0f1117;color:#e5e7eb;border-color:#2d3140}
+        \\:root[data-theme="dark"] .hotkey-field span{background:#0f1117;color:#e5e7eb}
+        \\:root[data-theme="dark"] .hotkey-field button{background:#0f1117;color:#e5e7eb;border-color:#2d3140}
         \\</style>
         \\</head><body>
     );
@@ -1402,6 +1409,8 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\<option value="dark">Dark</option>
         \\</select></div>
         \\<div class="modal-row"><label for="set-fillgaps">Fill gaps in analytics</label><input type="checkbox" id="set-fillgaps"></div>
+        \\<div class="modal-row"><label>Global shortcut</label><div class="hotkey-field"><span id="set-hotkey-display">Ctrl+Alt+L</span><button type="button" onclick="recordHotkey()">Record</button><button type="button" onclick="resetHotkey()">Reset</button></div></div>
+        \\<div class="hotkey-hint" id="hotkey-hint">Default: Ctrl+Alt+L</div>
         \\<div class="modal-row"><label>Backup</label><button onclick="exportData()">Export CSV&hellip;</button></div>
         \\<div class="modal-actions">
         \\<button onclick="closeSettings()">Cancel</button>
@@ -1463,6 +1472,63 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
     pos = appendStr(buf, pos, "let weekendsShown = ");
     pos = appendStr(buf, pos, if (show_weekends) "true" else "false");
     pos = appendStr(buf, pos, ";\n");
+    pos = appendStr(buf, pos,
+        \\const HOTKEY_MOD_CTRL=1,HOTKEY_MOD_ALT=2,HOTKEY_MOD_SHIFT=4,HOTKEY_MOD_WIN=8;
+        \\let pendingHotkeyMods=HOTKEY_MOD_CTRL|HOTKEY_MOD_ALT, pendingHotkeyKey=76;
+        \\function hotkeyLabel(mods,key){
+        \\  const parts=[];
+        \\  if(mods&HOTKEY_MOD_CTRL)parts.push("Ctrl");
+        \\  if(mods&HOTKEY_MOD_ALT)parts.push("Alt");
+        \\  if(mods&HOTKEY_MOD_SHIFT)parts.push("Shift");
+        \\  if(mods&HOTKEY_MOD_WIN)parts.push("Win");
+        \\  parts.push(String.fromCharCode(key));
+        \\  return parts.join("+");
+        \\}
+        \\function resetHotkey(){
+        \\  pendingHotkeyMods=HOTKEY_MOD_CTRL|HOTKEY_MOD_ALT;
+        \\  pendingHotkeyKey=76;
+        \\  document.getElementById("set-hotkey-display").textContent=hotkeyLabel(pendingHotkeyMods,pendingHotkeyKey);
+        \\  const hint=document.getElementById("hotkey-hint");
+        \\  hint.textContent="Default: Ctrl+Alt+L";
+        \\  hint.classList.remove("error");
+        \\}
+        \\function recordHotkey(){
+        \\  const disp=document.getElementById("set-hotkey-display");
+        \\  const hint=document.getElementById("hotkey-hint");
+        \\  disp.textContent="Press keys...";
+        \\  hint.textContent="Listening... (Esc to cancel)";
+        \\  hint.classList.remove("error");
+        \\  const onKey=function(e){
+        \\    e.preventDefault();
+        \\    if(e.key==="Escape"){
+        \\      document.removeEventListener("keydown",onKey,true);
+        \\      disp.textContent=hotkeyLabel(pendingHotkeyMods,pendingHotkeyKey);
+        \\      hint.textContent="Default: Ctrl+Alt+L";
+        \\      return;
+        \\    }
+        \\    if(["Control","Alt","Shift","Meta"].includes(e.key)) return;
+        \\    const key=e.key.length===1?e.key.toUpperCase():e.key;
+        \\    const isLetterOrDigit=/^[A-Z0-9]$/.test(key);
+        \\    let mods=0;
+        \\    if(e.ctrlKey)mods|=HOTKEY_MOD_CTRL;
+        \\    if(e.altKey)mods|=HOTKEY_MOD_ALT;
+        \\    if(e.shiftKey)mods|=HOTKEY_MOD_SHIFT;
+        \\    if(e.metaKey)mods|=HOTKEY_MOD_WIN;
+        \\    if(!isLetterOrDigit||mods===0){
+        \\      hint.textContent="Use a letter/number key with at least one modifier.";
+        \\      hint.classList.add("error");
+        \\      return;
+        \\    }
+        \\    pendingHotkeyMods=mods;
+        \\    pendingHotkeyKey=key.charCodeAt(0);
+        \\    disp.textContent=hotkeyLabel(mods,pendingHotkeyKey);
+        \\    hint.textContent="Default: Ctrl+Alt+L";
+        \\    hint.classList.remove("error");
+        \\    document.removeEventListener("keydown",onKey,true);
+        \\  };
+        \\  document.addEventListener("keydown",onKey,true);
+        \\}
+    );
 
     pos = appendStr(buf, pos,
         \\function applyResult(r){
@@ -1545,6 +1611,12 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\      populateHourSelect("set-end", s.work_end_hour);
         \\      document.getElementById("set-theme").value = s.theme;
         \\      document.getElementById("set-fillgaps").checked = !!s.fill_gaps;
+        \\      pendingHotkeyMods = s.hotkey_mods;
+        \\      pendingHotkeyKey = s.hotkey_key;
+        \\      document.getElementById("set-hotkey-display").textContent = hotkeyLabel(pendingHotkeyMods, pendingHotkeyKey);
+        \\      const hint = document.getElementById("hotkey-hint");
+        \\      hint.textContent = "Default: Ctrl+Alt+L";
+        \\      hint.classList.remove("error");
         \\    }
         \\  }catch(e){console.error(e)}
         \\  document.getElementById("settings-overlay").style.display = "flex";
@@ -1565,7 +1637,9 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\        work_start_hour: parseInt(document.getElementById("set-start").value, 10),
         \\        work_end_hour: parseInt(document.getElementById("set-end").value, 10),
         \\        theme: document.getElementById("set-theme").value,
-        \\        fill_gaps: document.getElementById("set-fillgaps").checked
+        \\        fill_gaps: document.getElementById("set-fillgaps").checked,
+        \\        hotkey_mods: pendingHotkeyMods,
+        \\        hotkey_key: pendingHotkeyKey
         \\      };
         \\      const r = await window.zero.invoke("app.save-settings", payload);
         \\      applyTheme(payload.theme);

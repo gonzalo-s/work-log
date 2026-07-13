@@ -1475,6 +1475,7 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
     pos = appendStr(buf, pos,
         \\const HOTKEY_MOD_CTRL=1,HOTKEY_MOD_ALT=2,HOTKEY_MOD_SHIFT=4,HOTKEY_MOD_WIN=8;
         \\let pendingHotkeyMods=HOTKEY_MOD_CTRL|HOTKEY_MOD_ALT, pendingHotkeyKey=76;
+        \\let hotkeyRecordingHandler=null;
         \\function hotkeyLabel(mods,key){
         \\  const parts=[];
         \\  if(mods&HOTKEY_MOD_CTRL)parts.push("Ctrl");
@@ -1498,10 +1499,11 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\  disp.textContent="Press keys...";
         \\  hint.textContent="Listening... (Esc to cancel)";
         \\  hint.classList.remove("error");
-        \\  const onKey=function(e){
+        \\  hotkeyRecordingHandler=function(e){
         \\    e.preventDefault();
         \\    if(e.key==="Escape"){
-        \\      document.removeEventListener("keydown",onKey,true);
+        \\      document.removeEventListener("keydown",hotkeyRecordingHandler,true);
+        \\      hotkeyRecordingHandler=null;
         \\      disp.textContent=hotkeyLabel(pendingHotkeyMods,pendingHotkeyKey);
         \\      hint.textContent="Default: Ctrl+Alt+L";
         \\      return;
@@ -1524,9 +1526,10 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\    disp.textContent=hotkeyLabel(mods,pendingHotkeyKey);
         \\    hint.textContent="Default: Ctrl+Alt+L";
         \\    hint.classList.remove("error");
-        \\    document.removeEventListener("keydown",onKey,true);
+        \\    document.removeEventListener("keydown",hotkeyRecordingHandler,true);
+        \\    hotkeyRecordingHandler=null;
         \\  };
-        \\  document.addEventListener("keydown",onKey,true);
+        \\  document.addEventListener("keydown",hotkeyRecordingHandler,true);
         \\}
     );
 
@@ -1622,6 +1625,14 @@ pub fn writeHtmlToBuffer(buf: []u8, entries: []const Entry) usize {
         \\  document.getElementById("settings-overlay").style.display = "flex";
         \\}
         \\function closeSettings(){
+        \\  if(hotkeyRecordingHandler){
+        \\    document.removeEventListener("keydown",hotkeyRecordingHandler,true);
+        \\    hotkeyRecordingHandler=null;
+        \\    document.getElementById("set-hotkey-display").textContent=hotkeyLabel(pendingHotkeyMods,pendingHotkeyKey);
+        \\    const hint=document.getElementById("hotkey-hint");
+        \\    hint.textContent="Default: Ctrl+Alt+L";
+        \\    hint.classList.remove("error");
+        \\  }
         \\  document.getElementById("settings-overlay").style.display = "none";
         \\}
         \\function openAbout(){

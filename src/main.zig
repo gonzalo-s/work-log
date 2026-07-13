@@ -241,11 +241,13 @@ const WorkLogApp = struct {
             .light => "light",
             .dark => "dark",
         };
-        return std.fmt.bufPrint(output, "{{\"work_start_hour\":{d},\"work_end_hour\":{d},\"theme\":\"{s}\",\"fill_gaps\":{s}}}", .{
+        return std.fmt.bufPrint(output, "{{\"work_start_hour\":{d},\"work_end_hour\":{d},\"theme\":\"{s}\",\"fill_gaps\":{s},\"hotkey_mods\":{d},\"hotkey_key\":{d}}}", .{
             work_start_hour,
             work_end_hour,
             theme_str,
             @as([]const u8, if (fill_gaps) "true" else "false"),
+            hotkey_mods,
+            hotkey_key,
         }) catch "{}";
     }
 
@@ -271,6 +273,12 @@ const WorkLogApp = struct {
         }
         if (jsonBoolField(payload, "fill_gaps")) |v| {
             fill_gaps = v;
+        }
+        if (jsonUnsignedField(payload, "hotkey_mods")) |v| {
+            if (isValidHotkeyMods(v)) hotkey_mods = v;
+        }
+        if (jsonUnsignedField(payload, "hotkey_key")) |v| {
+            if (isValidHotkeyKey(v)) hotkey_key = v;
         }
 
         self.saveSettings();
@@ -607,6 +615,12 @@ const WorkLogApp = struct {
                 fill_gaps = std.mem.eql(u8, value, "1");
             } else if (std.mem.eql(u8, key, "show_weekends")) {
                 show_weekends = std.mem.eql(u8, value, "1");
+            } else if (std.mem.eql(u8, key, "hotkey_mods")) {
+                const v = std.fmt.parseUnsigned(u8, value, 10) catch hotkey_mods;
+                if (isValidHotkeyMods(v)) hotkey_mods = v;
+            } else if (std.mem.eql(u8, key, "hotkey_key")) {
+                const v = std.fmt.parseUnsigned(u8, value, 10) catch hotkey_key;
+                if (isValidHotkeyKey(v)) hotkey_key = v;
             }
         }
     }
@@ -630,12 +644,14 @@ const WorkLogApp = struct {
             .dark => "dark",
         };
         var write_buf: [256]u8 = undefined;
-        const content = std.fmt.bufPrint(&write_buf, "work_start_hour={d}\nwork_end_hour={d}\ntheme={s}\nfill_gaps={d}\nshow_weekends={d}\n", .{
+        const content = std.fmt.bufPrint(&write_buf, "work_start_hour={d}\nwork_end_hour={d}\ntheme={s}\nfill_gaps={d}\nshow_weekends={d}\nhotkey_mods={d}\nhotkey_key={d}\n", .{
             work_start_hour,
             work_end_hour,
             theme_str,
             @as(u8, if (fill_gaps) 1 else 0),
             @as(u8, if (show_weekends) 1 else 0),
+            hotkey_mods,
+            hotkey_key,
         }) catch return;
         var written: u32 = 0;
         _ = w32.WriteFile(handle, content.ptr, @intCast(content.len), &written, null);

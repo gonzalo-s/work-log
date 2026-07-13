@@ -16,6 +16,11 @@ const hotkey_interval_ns: u64 = 150_000_000;
 const clipboard_read_timer_id: u64 = 43;
 const clipboard_read_delay_ns: u64 = 200_000_000;
 
+const hotkey_mod_ctrl: u8 = 1;
+const hotkey_mod_alt: u8 = 2;
+const hotkey_mod_shift: u8 = 4;
+const hotkey_mod_win: u8 = 8;
+
 const Theme = enum { auto, light, dark };
 
 var work_start_hour: u8 = 9;
@@ -23,6 +28,31 @@ var work_end_hour: u8 = 17;
 var app_theme: Theme = .auto;
 var fill_gaps: bool = false;
 var show_weekends: bool = false;
+var hotkey_mods: u8 = hotkey_mod_ctrl | hotkey_mod_alt;
+var hotkey_key: u8 = 'L';
+
+/// A combo needs at least one modifier so the key alone never fires as a
+/// system-wide hotkey while typing normally.
+fn isValidHotkeyMods(mods: u8) bool {
+    return mods >= 1 and mods <= 15;
+}
+
+fn isValidHotkeyKey(key: u8) bool {
+    return (key >= 'A' and key <= 'Z') or (key >= '0' and key <= '9');
+}
+
+/// Pure combination check shared by the live poller and its tests: every
+/// modifier bit set in `mods` must be currently held, and `key_down` must be
+/// true. Modifiers not in `mods` are ignored even if incidentally held,
+/// matching today's exact ctrl+alt+l-only check.
+fn hotkeyMatches(mods: u8, ctrl: bool, alt: bool, shift: bool, win: bool, key_down: bool) bool {
+    if (!key_down) return false;
+    if ((mods & hotkey_mod_ctrl) != 0 and !ctrl) return false;
+    if ((mods & hotkey_mod_alt) != 0 and !alt) return false;
+    if ((mods & hotkey_mod_shift) != 0 and !shift) return false;
+    if ((mods & hotkey_mod_win) != 0 and !win) return false;
+    return true;
+}
 
 const Entry = struct {
     date: [10]u8,
@@ -2156,4 +2186,39 @@ test "analytics body renders without entries" {
     const len = writeAnalyticsBody(&buf, 0, &entries);
     try std.testing.expect(len > 0);
     try std.testing.expect(std.mem.indexOf(u8, buf[0..len], "No entries yet") != null);
+}
+
+test "isValidHotkeyMods accepts any non-empty subset of the 4 modifier bits" {
+    try std.testing.expect(isValidHotkeyMods(1));
+    try std.testing.expect(isValidHotkeyMods(3));
+    try std.testing.expect(isValidHotkeyMods(15));
+    try std.testing.expect(!isValidHotkeyMods(0));
+    try std.testing.expect(!isValidHotkeyMods(16));
+}
+
+test "isValidHotkeyKey accepts only A-Z and 0-9" {
+    try std.testing.expect(isValidHotkeyKey('L'));
+    try std.testing.expect(isValidHotkeyKey('A'));
+    try std.testing.expect(isValidHotkeyKey('9'));
+    try std.testing.expect(!isValidHotkeyKey('a'));
+    try std.testing.expect(!isValidHotkeyKey(' '));
+    try std.testing.expect(!isValidHotkeyKey(27)); // Escape
+}
+
+test "hotkeyMatches requires exactly the configured modifiers and key to be down" {
+    const mods = hotkey_mod_ctrl | hotkey_mod_alt;
+    // Ctrl+Alt+L combo, all three down -> matches
+    try std.testing.expect(hotkeyMatches(mods, true, true, false, false, true));
+    // key not down -> no match
+    try std.testing.expect(!hotkeyMatches(mods, true, true, false, false, false));
+    // a required modifier not down -> no match
+    try std.testing.expect(!hotkeyMatches(mods, true, false, false, false, true));
+    // extra modifier incidentally held is ignored (matches today's ctrl+alt+l-only check)
+    try std.testing.expect(hotkeyMatches(mods, true, true, true, false, true));
+}
+
+test "hotkeyMatches with a single-modifier combo" {
+    const mods = hotkey_mod_shift;
+    try std.testing.expect(hotkeyMatches(mods, false, false, true, false, true));
+    try std.testing.expect(!hotkeyMatches(mods, false, false, false, false, true));
 }
